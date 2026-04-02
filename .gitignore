@@ -1,2 +1,11 @@
+.env
+
 /docs/reference.md
 /docs/readme2.md
+
+
+test.yaml
+
+__pycache__/
+*.pyc
+.DS_Store
