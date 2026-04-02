@@ -5,6 +5,7 @@
 
 
 test.yaml
+Dockerfile.py
 
 __pycache__/
 *.pyc

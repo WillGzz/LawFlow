@@ -1,0 +1,12 @@
+kafka-python==2.0.2
+requests==2.31.0
+pyspark==3.5.0
+sentence-transformers==2.7.0
+qdrant-client==1.9.0
+arcadedb==24.1.1
+langchain==0.2.0
+langchain-anthropic==0.1.15
+anthropic==0.28.0
+fastapi==0.111.0
+uvicorn==0.30.0
+python-dotenv==1.0.0
