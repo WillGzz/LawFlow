@@ -1,7 +1,8 @@
 .env
 
-/docs/reference.md
-/docs/readme2.md
+/docs/internal/reference.md
+/docs/internal/readme2.md
+/docs/internal/lawflow.md
 
 
 test.yaml

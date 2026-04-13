@@ -12,6 +12,11 @@ FEDERAL_REGISTER_URL = "https://www.federalregister.gov/api/v1/documents.json"
 FEDERAL_REGISTER_PARAMS = {
     "per_page": 20,
     "order": "newest",
+    "conditions[agencies][]": [
+        "energy-department",
+        "environmental-protection-agency",
+    ],
+    "conditions[type][]": ["RULE", "PRORULE"],
 }
 
 # Qdrant
