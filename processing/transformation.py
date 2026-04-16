@@ -1,7 +1,5 @@
 
 import logging
-import os
-import sys
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf)
@@ -10,7 +8,7 @@ from pyspark.sql.types import (
 
 import pandas as pd
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import settings as cfg
 
 from storage.qdrant_loader import load_qdrant_batch
@@ -34,14 +32,19 @@ def build_spark() -> SparkSession:
         SparkSession.builder
         .appName("LawFlow")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "8")
+        .config("spark.sql.shuffle.partitions", "8") # 8 partitions for shuffling data in local mode (low data volume)
         .config(
-            "spark.jars.packages",
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0",
+            "spark.jars.packages", #download the Kafka connector library.
+            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0", #
         )
         .getOrCreate()
     )
  
+# org.apache.spark — Apache Spark organization
+# spark-sql-kafka-0-10 — the Kafka connector package
+# 2.12 — Scala version Spark was compiled with
+# 3.5.0 — PySpark version 
+
  
 # =============================================================================
 # KAFKA MESSAGE SCHEMA
@@ -220,9 +223,7 @@ def generate_embeddings(texts: pd.Series) -> pd.Series:
     return pd.Series(embeddings.tolist())
  
  
-# =============================================================================
-# PIPELINE
-# =============================================================================
+
  
 def read_from_kafka(spark: SparkSession, schema: StructType):
     """

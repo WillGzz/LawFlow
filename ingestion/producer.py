@@ -4,10 +4,8 @@ import time
 import requests
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
-import sys
-import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config.settings import (
     KAFKA_BROKER,
     KAFKA_TOPIC,
