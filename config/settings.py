@@ -6,6 +6,9 @@ load_dotenv()
 # Kafka
 KAFKA_BROKER = "kafka:9092"
 KAFKA_TOPIC = "regulations"
+KAFKA_CONSUMER_GROUP = "spark-processor"
+KAFKA_PARTITIONS = 3
+KAFKA_REPLICATION_FACTOR = 1
 
 # Federal Register API
 FEDERAL_REGISTER_URL = "https://www.federalregister.gov/api/v1/documents.json"
@@ -35,9 +38,6 @@ ARCADEDB_DATABASE = "lawflow"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
-# Spark
-SPARK_APP_NAME = "LawFlow"
-SPARK_MASTER = "local[*]"
 
 # Processing
 CHUNK_SIZE = 512
