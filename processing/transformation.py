@@ -1,6 +1,6 @@
 
 import logging
-
+import re
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf)
 from pyspark.sql.types import (
@@ -22,12 +22,7 @@ logger = logging.getLogger(__name__)
 
  
 def build_spark() -> SparkSession:
-    """
-    Create SparkSession in local mode.
-    local[*] uses all available CPU cores.
-    shuffle.partitions=8 is appropriate for local mode with small data volume.
-    Kafka package gives Spark native ability to read from Kafka topics.
-    """
+    
     return (
         SparkSession.builder
         .appName("LawFlow")
@@ -46,17 +41,8 @@ def build_spark() -> SparkSession:
 # 3.5.0 — PySpark version 
 
  
-# =============================================================================
-# KAFKA MESSAGE SCHEMA
-# =============================================================================
- 
 def get_kafka_schema() -> StructType:
-    """
-    Define the expected structure of messages arriving from Kafka.
-    Mirrors exactly what producer.py sends.
-    Spark uses this to parse raw JSON bytes into a typed DataFrame.
-    nullable=True for fields that may not be present on every document.
-    """
+    
     agency_schema = StructType([
         StructField("id",        IntegerType(), True),
         StructField("raw_name",  StringType(),  True),
@@ -83,14 +69,10 @@ def get_kafka_schema() -> StructType:
         StructField("agencies",         ArrayType(agency_schema), True),
     ])
  
- 
-# =============================================================================
-# USER DEFINED FUNCTIONS
-# =============================================================================
- 
+
 def _extract_primary_agency(agencies: list) -> dict | None:
     """
-    Return the sub-agency (the one with a parent_id).
+    Return the sub-agency — the one with a parent_id.
     If no sub-agency exists return the first agency.
     Example: for [DOE, FERC] returns FERC because FERC has parent_id=136.
     """
@@ -102,7 +84,7 @@ def _extract_primary_agency(agencies: list) -> dict | None:
  
 def _extract_parent_agency(agencies: list) -> dict | None:
     """
-    Return the top-level parent agency (the one with parent_id=null).
+    Return the top-level parent agency — the one with parent_id=null.
     Returns None if only one agency or no parent found.
     Example: for [DOE, FERC] returns DOE because DOE has parent_id=null.
     """
@@ -119,7 +101,7 @@ def _extract_primary_docket(docket_ids: list) -> str | None:
     per document — they cannot connect related documents.
     Agency-prefixed IDs (e.g. EPA-R02-OAR-2025-1047) are shared
     across related documents and used for graph relationships.
-    Strips "Docket No. " prefix if present.
+    Strips Docket No. prefix if present.
     """
     if not docket_ids:
         return None
@@ -128,20 +110,63 @@ def _extract_primary_docket(docket_ids: list) -> str | None:
     return primary.replace("Docket No. ", "").strip()
  
  
+def _clean_text(text: str) -> str:
+    """
+  
+ 
+    - HTML tags including script blocks from Cloudflare email protection
+    - Page markers [[Page 14306]] — print pagination artifacts
+    - Footnote references \\1\\ \\2\\ — legal citation markers
+    - Footnote content blocks that follow separator lines
+    - Long separator lines of dashes used as section dividers
+    - Form feed characters \\f used as page breaks in print format
+    - HTML entities &amp; &#160; etc
+    - Excessive whitespace and line breaks
+    """
+    if not text:
+        return text
+ 
+    # remove script tags and their full content
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
+ 
+    # remove all remaining html tags
+    text = re.sub(r'<[^>]+>', '', text)
+ 
+    # remove page markers [[Page 14306]]
+    text = re.sub(r'\[\[Page \d+\]\]', '', text)
+ 
+    # remove footnote references \1\ \2\ \3\ etc
+    text = re.sub(r'\\\d+\\', '', text)
+ 
+    # remove long separator lines of dashes (3 or more dashes)
+    text = re.sub(r'-{3,}', '', text)
+ 
+    # remove form feed characters used as page breaks
+    text = text.replace('\f', ' ')
+ 
+    # decode common html entities
+    text = text.replace('&#160;', ' ')
+    text = text.replace('&amp;', '&')
+    text = text.replace('&lt;', '<')
+    text = text.replace('&gt;', '>')
+    text = text.replace('&nbsp;', ' ')
+ 
+    # normalize all whitespace — tabs, newlines, multiple spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+ 
+    return text
+ 
+ 
 def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     """
-    Split text into overlapping word-based chunks.
-    chunk_size controls how many words per chunk (~512 words = ~3-4 paragraphs).
-    overlap preserves context at chunk boundaries — last N words of one chunk
-    are repeated at the start of the next.
-    Strips form feed characters (common in government documents)
-    and normalizes whitespace before chunking.
+    Split cleaned text into overlapping word-based chunks.
+    chunk_size controls words per chunk (~512 words = ~3-4 paragraphs).
+    overlap preserves context at chunk boundaries — last N words of one
+    chunk repeat at the start of the next so meaning is not lost.
+    Returns empty list if text is empty after cleaning.
     """
-    import re
     if not text:
         return []
-    text = text.replace("\f", " ")
-    text = re.sub(r"\s+", " ", text).strip()
     words = text.split()
     if not words:
         return []
@@ -157,45 +182,47 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
 # register UDFs with Spark
 agency_name_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies or {}).get("raw_name", "").title()
-        if _extract_primary_agency(agencies or {}) else None
+        _extract_primary_agency(agencies).get("raw_name", "").title()
+        if _extract_primary_agency(agencies) else None
     ),
     StringType(),
 )
  
 agency_id_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies or {}).get("id")
-        if _extract_primary_agency(agencies or {}) else None
+        _extract_primary_agency(agencies).get("id")
+        if _extract_primary_agency(agencies) else None
     ),
     IntegerType(),
 )
  
 agency_url_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies or {}).get("url", "")
-        if _extract_primary_agency(agencies or {}) else None
+        _extract_primary_agency(agencies).get("url", "")
+        if _extract_primary_agency(agencies) else None
     ),
     StringType(),
 )
  
 parent_agency_name_udf = udf(
     lambda agencies: (
-        _extract_parent_agency(agencies or {}).get("raw_name", "").title()
-        if _extract_parent_agency(agencies or {}) else None
+        _extract_parent_agency(agencies).get("raw_name", "").title()
+        if _extract_parent_agency(agencies) else None
     ),
     StringType(),
 )
  
 parent_agency_id_udf = udf(
     lambda agencies: (
-        _extract_parent_agency(agencies or {}).get("id")
-        if _extract_parent_agency(agencies or {}) else None
+        _extract_parent_agency(agencies).get("id")
+        if _extract_parent_agency(agencies) else None
     ),
     IntegerType(),
 )
  
 primary_docket_udf = udf(_extract_primary_docket, StringType())
+ 
+clean_text_udf = udf(_clean_text, StringType())
  
 chunk_text_udf = udf(
     lambda text: _chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP),
@@ -213,7 +240,7 @@ def generate_embeddings(texts: pd.Series) -> pd.Series:
     Generate sentence embeddings using all-MiniLM-L6-v2.
     Pandas UDF processes rows in batches not one at a time —
     significantly faster for CPU intensive embedding generation.
-    Model loads once per batch, not once per row.
+    Model loads once per batch not once per row.
     384-dimensional vectors stored in Qdrant for semantic search.
     Model downloads automatically from HuggingFace on first run (~80MB).
     """
@@ -223,14 +250,17 @@ def generate_embeddings(texts: pd.Series) -> pd.Series:
     return pd.Series(embeddings.tolist())
  
  
-
+# =============================================================================
+# PIPELINE STEPS
+# =============================================================================
  
 def read_from_kafka(spark: SparkSession, schema: StructType):
     """
     Connect to Kafka and read the regulations topic as a stream.
     startingOffsets=latest means only process new messages —
     not reprocess everything from the beginning on restart.
-    Spark uses checkpoints to track exact offset position.
+    Spark uses checkpoints to track exact offset position so
+    restarts resume from exactly where they left off.
     """
     return (
         spark.readStream
@@ -248,9 +278,10 @@ def read_from_kafka(spark: SparkSession, schema: StructType):
 def validate(df):
     """
     Drop rows missing required fields.
-    document_number and title are the minimum required fields.
-    text_to_process must not be null — use full_text if available,
-    fall back to abstract. If both are null drop the row entirely.
+    document_number and title are the minimum required.
+    Resolve text — use full_text if available, fall back to abstract.
+    Drop rows where both full_text and abstract are null —
+    no text means no embeddings, no value for the pipeline.
     """
     return (
         df
@@ -267,36 +298,54 @@ def validate(df):
  
 def transform(df):
     """
-    Apply all transformations to the validated DataFrame.
-    Extracts agency fields, docket ID, chunks text, generates embeddings.
-    Returns a DataFrame with one row per chunk ready for storage.
+    Apply all transformations to produce a chunk-level DataFrame.
+ 
+    Steps in order:
+    1. Extract agency fields via UDFs — name, id, url, parent
+    2. Extract primary docket ID filtering out FRL numbers
+    3. Clean text — remove HTML, page markers, footnotes, separators
+    4. Chunk text — split into overlapping 512-word paragraphs
+    5. Drop raw text columns no longer needed
+    6. Explode chunks — one row per chunk
+    7. Add chunk_index and chunk_id
+    8. Generate embeddings — 384-dim vector per chunk
+    9. Deduplicate on chunk_id — prevent duplicate chunks
     """
-    # extract agency and docket fields via UDFs
-    enriched = (
+
+    updated_df = (
         df
         .withColumn("agency_name",        agency_name_udf(col("agencies")))
         .withColumn("agency_id",          agency_id_udf(col("agencies")))
         .withColumn("agency_url",         agency_url_udf(col("agencies")))
         .withColumn("parent_agency_name", parent_agency_name_udf(col("agencies")))
         .withColumn("parent_agency_id",   parent_agency_id_udf(col("agencies")))
-        .withColumn("primary_docket_id",  primary_docket_udf(col("docket_ids")))
     )
  
-    # chunk text into overlapping paragraphs
+    with_docket = updated_df.withColumn(
+        "primary_docket_id",
+        primary_docket_udf(col("docket_ids"))
+    )
+ 
+    with_clean = with_docket.withColumn(
+        "processed_text",
+        clean_text_udf(col("full_text"))
+    )
+ 
+  
     chunked = (
-        enriched
+        with_clean
         .withColumn("chunks", chunk_text_udf(col("text_to_process")))
-        .drop("text_to_process", "full_text", "raw_text_url")
+        .drop("text_to_process", "full_text", "raw_text_url", "agencies")
     )
  
-    # explode chunks — one row per chunk
+    # step 6 — explode chunks — one row per chunk
     exploded = (
         chunked
         .select("*", explode(col("chunks")).alias("chunk_text"))
         .drop("chunks")
     )
  
-    # add chunk_index and chunk_id
+    # step 7 — add chunk_index and chunk_id
     window = Window.partitionBy("document_number").orderBy(lit(1))
     with_index = (
         exploded
@@ -311,23 +360,39 @@ def transform(df):
         )
     )
  
-    # generate embeddings — one 384-dim vector per chunk
+    # step 8 — generate embeddings
     with_embeddings = with_index.withColumn(
         "embedding",
         generate_embeddings(col("chunk_text"))
     )
  
-    return with_embeddings
+    # step 9 — deduplicate on chunk_id
+    # prevents same chunk being written twice if same document
+    # appears in multiple pipeline runs
+    deduped = with_embeddings.dropDuplicates(["chunk_id"])
  
+    return deduped
+ 
+ 
+# =============================================================================
+# MAIN PIPELINE
+# =============================================================================
  
 def run() -> None:
     """
     Main entry point for the transformation pipeline.
+ 
     Starts two parallel streaming queries:
-    1. Writes chunks + embeddings to Qdrant
-    2. Writes document-level data to ArcadeDB
-    Both run every 30 seconds processing whatever arrived in Kafka.
-    Checkpoints track progress so restarts resume from last position.
+    1. Chunk level — writes chunks + embeddings to Qdrant
+    2. Document level — deduplicates to one row per document,
+       writes entity and relationship data to ArcadeDB
+ 
+    Both queries run every 30 seconds processing whatever
+    arrived in Kafka since the last trigger.
+ 
+    Checkpoints track offset position so restarts resume
+    from exactly where they left off — no data loss,
+    no duplicate processing.
     """
     spark = build_spark()
     spark.sparkContext.setLogLevel("WARN")
@@ -367,4 +432,3 @@ def run() -> None:
  
 if __name__ == "__main__":
     run()
- 

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>LawFlow — Regulatory Intelligence</title>
+        <link rel="stylesheet" href="style.css">
+        <script defer src="app.js"></script>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <h1>LawFlow</h1>
+    <p class="header-subtitle">Regulatory intelligence — EPA &amp; DOE</p>
+</header>
+
+<div class="chat-container" id="chat">
+    <div class="empty-state" id="empty-state">
+        <h2>Ask about US energy &amp; environmental regulations</h2>
+        <p>LawFlow searches real-time Federal Register documents from the EPA and Department of Energy to answer your regulatory questions.</p>
+        <div class="suggestions">
+            <button class="suggestion-btn" onclick="fillQuestion(this)">What EPA rules changed recently?</button>
+            <button class="suggestion-btn" onclick="fillQuestion(this)">Show me recent DOE proposed rules</button>
+            <button class="suggestion-btn" onclick="fillQuestion(this)">What regulations are open for public comment?</button>
+            <button class="suggestion-btn" onclick="fillQuestion(this)">What are the latest energy conservation standards?</button>
+        </div>
+    </div>
+</div>
+
+<div class="input-area">
+    <div class="input-wrapper">
+        <textarea
+            id="question-input"
+            placeholder="Ask about regulations, agencies, dockets..."
+            rows="1"
+        ></textarea>
+        <button id="send-btn" onclick="sendQuestion()">
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+        </button>
+    </div>
+</div>
+
+</body>
+</html>
