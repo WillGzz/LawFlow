@@ -41,10 +41,10 @@ ANTHROPIC_MODEL = "claude-sonnet-4-6"
 # Groq
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 LLM_PROVIDER="groq"
-GROQ_MODEL="llama-3.3-70b-versatile"
+GROQ_MODEL="groq/compound"
 
 
 # Processing
 CHUNK_SIZE = 1500    # ~375 tokens, within 512 limit, ~1-2 regulatory paragraphs
 CHUNK_OVERLAP = 150  # 10% overlap, preserves sentence context at boundaries
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-large"

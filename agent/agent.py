@@ -355,7 +355,7 @@ def build_agent() -> AgentExecutor:
         agent=agent,
         tools=tools,
         verbose=True,
-        max_iterations=5,
+        max_iterations=3,
         handle_parsing_errors=True,
     )
 
