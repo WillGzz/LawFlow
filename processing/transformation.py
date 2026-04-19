@@ -2,7 +2,8 @@
 import logging
 import re
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf)
+from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf, pandas_udf, row_number, size)
+from pyspark.sql.window import Window
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, ArrayType, FloatType )
 
@@ -157,28 +158,29 @@ def _clean_text(text: str) -> str:
     return text
  
  
+ 
 def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     """
-    Split cleaned text into overlapping word-based chunks.
-    chunk_size controls words per chunk (~512 words = ~3-4 paragraphs).
-    overlap preserves context at chunk boundaries — last N words of one
-    chunk repeat at the start of the next so meaning is not lost.
-    Returns empty list if text is empty after cleaning.
+    
+    Tries to split on paragraph breaks first (\n\n), then sentences (\n),
+    then periods, then spaces — preserving natural document structure.
+ 
+    chunk_size in characters not words — 2000 chars ~ 300-400 words ~ 2-3 paragraphs.
+    overlap preserves context at chunk boundaries — last N characters of one
+    chunk repeat at the start of the next so meaning is not lost at splits.
     """
     if not text:
         return []
-    words = text.split()
-    if not words:
-        return []
-    chunks = []
-    start = 0
-    while start < len(words):
-        end = start + chunk_size
-        chunks.append(" ".join(words[start:end]))
-        start += chunk_size - overlap
-    return chunks
+    from langchain_text_splitter import RecursiveCharacterTextSplitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", ".", " "],
+    )
+    chunks = splitter.split_text(text)
+    return [c.strip() for c in chunks if c.strip()]
  
- 
+
 # register UDFs with Spark
 agency_name_udf = udf(
     lambda agencies: (
@@ -225,7 +227,7 @@ primary_docket_udf = udf(_extract_primary_docket, StringType())
 clean_text_udf = udf(_clean_text, StringType())
  
 chunk_text_udf = udf(
-    lambda text: _chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP),
+    lambda text: _chunk_text(text, cfg.CHUNK_SIZE, cfg.CHUNK_OVERLAP),
     ArrayType(StringType()),
 )
  
@@ -245,29 +247,18 @@ def generate_embeddings(texts: pd.Series) -> pd.Series:
     Model downloads automatically from HuggingFace on first run (~80MB).
     """
     from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    model = SentenceTransformer(cfg.EMBEDDING_MODEL)
     embeddings = model.encode(texts.tolist(), show_progress_bar=False)
     return pd.Series(embeddings.tolist())
  
  
-# =============================================================================
-# PIPELINE STEPS
-# =============================================================================
- 
 def read_from_kafka(spark: SparkSession, schema: StructType):
-    """
-    Connect to Kafka and read the regulations topic as a stream.
-    startingOffsets=latest means only process new messages —
-    not reprocess everything from the beginning on restart.
-    Spark uses checkpoints to track exact offset position so
-    restarts resume from exactly where they left off.
-    """
     return (
         spark.readStream
         .format("kafka")
-        .option("kafka.bootstrap.servers", KAFKA_BROKER)
-        .option("subscribe", KAFKA_TOPIC)
-        .option("kafka.group.id", KAFKA_CONSUMER_GROUP)
+        .option("kafka.bootstrap.servers", cfg.KAFKA_BROKER)
+        .option("subscribe", cfg.KAFKA_TOPIC)
+        .option("kafka.group.id", cfg.KAFKA_CONSUMER_GROUP)
         .option("startingOffsets", "latest")
         .load()
         .select(from_json(col("value").cast("string"), schema).alias("doc"))
@@ -278,21 +269,25 @@ def read_from_kafka(spark: SparkSession, schema: StructType):
 def validate(df):
     """
     Drop rows missing required fields.
-    document_number and title are the minimum required.
-    Resolve text — use full_text if available, fall back to abstract.
-    Drop rows where both full_text and abstract are null —
-    no text means no embeddings, no value for the pipeline.
+    document_number, title, and agencies are required.
+    agencies must be non-empty — every Federal Register document
+    has an agency by definition. A document without agency data
+    would create an orphaned Document vertex in ArcadeDB.
+    Resolves text — use full_text if available, fall back to abstract.
+    Drops rows where both are null — no text means no embeddings.
     """
     return (
         df
         .filter(col("document_number").isNotNull())
         .filter(col("title").isNotNull())
+        .filter(col("agencies").isNotNull())
+        .filter(size(col("agencies")) > 0)
         .withColumn(
-            "text_to_process",
+            "processed_text",
             when(col("full_text").isNotNull(), col("full_text"))
             .otherwise(col("abstract"))
         )
-        .filter(col("text_to_process").isNotNull())
+        .filter(col("processed_text").isNotNull())
     )
  
  
@@ -303,15 +298,16 @@ def transform(df):
     Steps in order:
     1. Extract agency fields via UDFs — name, id, url, parent
     2. Extract primary docket ID filtering out FRL numbers
-    3. Clean text — remove HTML, page markers, footnotes, separators
-    4. Chunk text — split into overlapping 512-word paragraphs
+    3. Clean processed_text — remove HTML, page markers, footnotes, separators
+    4. Chunk text — split using RecursiveCharacterTextSplitter
     5. Drop raw text columns no longer needed
     6. Explode chunks — one row per chunk
     7. Add chunk_index and chunk_id
-    8. Generate embeddings — 384-dim vector per chunk
+    8. Generate embeddings — 768-dim vector per chunk
     9. Deduplicate on chunk_id — prevent duplicate chunks
     """
-
+ 
+    # step 1 — extract agency fields
     updated_df = (
         df
         .withColumn("agency_name",        agency_name_udf(col("agencies")))
@@ -321,21 +317,23 @@ def transform(df):
         .withColumn("parent_agency_id",   parent_agency_id_udf(col("agencies")))
     )
  
+    # step 2 — extract primary docket id
     with_docket = updated_df.withColumn(
         "primary_docket_id",
         primary_docket_udf(col("docket_ids"))
     )
  
+    # step 3 — clean processed_text (already resolved from full_text or abstract)
     with_clean = with_docket.withColumn(
         "processed_text",
-        clean_text_udf(col("full_text"))
+        clean_text_udf(col("processed_text"))
     )
  
-  
+    # step 4 + 5 — chunk text and drop unneeded columns
     chunked = (
         with_clean
-        .withColumn("chunks", chunk_text_udf(col("text_to_process")))
-        .drop("text_to_process", "full_text", "raw_text_url", "agencies")
+        .withColumn("chunks", chunk_text_udf(col("processed_text")))
+        .drop("processed_text", "full_text", "raw_text_url", "agencies")
     )
  
     # step 6 — explode chunks — one row per chunk
@@ -366,9 +364,7 @@ def transform(df):
         generate_embeddings(col("chunk_text"))
     )
  
-    # step 9 — deduplicate on chunk_id
-    # prevents same chunk being written twice if same document
-    # appears in multiple pipeline runs
+
     deduped = with_embeddings.dropDuplicates(["chunk_id"])
  
     return deduped
@@ -379,21 +375,6 @@ def transform(df):
 # =============================================================================
  
 def run() -> None:
-    """
-    Main entry point for the transformation pipeline.
- 
-    Starts two parallel streaming queries:
-    1. Chunk level — writes chunks + embeddings to Qdrant
-    2. Document level — deduplicates to one row per document,
-       writes entity and relationship data to ArcadeDB
- 
-    Both queries run every 30 seconds processing whatever
-    arrived in Kafka since the last trigger.
- 
-    Checkpoints track offset position so restarts resume
-    from exactly where they left off — no data loss,
-    no duplicate processing.
-    """
     spark = build_spark()
     spark.sparkContext.setLogLevel("WARN")
  

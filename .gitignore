@@ -13,3 +13,13 @@ __pycache__/
 .DS_Store
 
 /processing/response.py
+
+airflow.db
+airflow.cfg
+airflow-webserver.pid
+webserver_config.py
+logs/
+*.pid
+
+standalone_admin_password.txt
+.env

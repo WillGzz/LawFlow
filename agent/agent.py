@@ -4,7 +4,6 @@ from typing import Any
 
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.tools import tool
-from langchain_anthropic import ChatAnthropic
 from langchain.prompts import PromptTemplate
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -14,6 +13,9 @@ import requests
 from config.settings import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_MODEL,
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    LLM_PROVIDER,
     QDRANT_HOST,
     QDRANT_PORT,
     QDRANT_COLLECTION,
@@ -265,7 +267,7 @@ def search_by_agency(agency_name: str) -> str:
 # =============================================================================
 # AGENT PROMPT
 # =============================================================================
-# The system prompt tells Claude its role, what tools it has,
+# The system prompt tells the LLM its role, what tools it has,
 # and how to format responses.
 # The ReAct format requires specific placeholders:
 # {tools} — list of available tools
@@ -309,21 +311,37 @@ Question: {input}
 # =============================================================================
 # AGENT
 # =============================================================================
+# LLM provider is controlled by LLM_PROVIDER env var.
+# Set LLM_PROVIDER=groq for testing (free, no credits burned).
+# Set LLM_PROVIDER=anthropic for the interview demo (better reasoning).
 
 def build_agent() -> AgentExecutor:
     """
     Build and return the LangChain ReAct agent.
+    LLM is selected based on LLM_PROVIDER env var:
+    - groq: uses Llama 3.3 70B via Groq (free tier, for testing)
+    - anthropic: uses Claude Sonnet (for demo)
     ReAct = Reason + Act — the agent reasons about which tool to use,
     calls it, observes the result, reasons again, repeats until
     it has enough information to give a final answer.
     verbose=True logs each reasoning step — useful for debugging.
     max_iterations=5 prevents infinite loops if the agent gets stuck.
     """
-    llm = ChatAnthropic(
-        model=ANTHROPIC_MODEL,
-        api_key=ANTHROPIC_API_KEY,
-        max_tokens=2048,
-    )
+    if LLM_PROVIDER == "groq":
+        from langchain_groq import ChatGroq
+        llm = ChatGroq(
+            model=GROQ_MODEL,
+            api_key=GROQ_API_KEY,
+        )
+        logger.info(f"Using Groq LLM: {GROQ_MODEL}")
+    else:
+        from langchain_anthropic import ChatAnthropic
+        llm = ChatAnthropic(
+            model=ANTHROPIC_MODEL,
+            api_key=ANTHROPIC_API_KEY,
+            max_tokens=2048,
+        )
+        logger.info(f"Using Anthropic LLM: {ANTHROPIC_MODEL}")
 
     tools = [search_regulations, get_regulatory_context, search_by_agency]
 
@@ -342,14 +360,16 @@ def build_agent() -> AgentExecutor:
     )
 
 
+# initialized once at module level — reused across all requests
+agent_executor = build_agent()
+
+
 def run(question: str) -> str:
     """
     Run the agent with a user question and return the answer.
     Called by FastAPI when a user submits a question through the frontend.
     """
     logger.info(f"Agent received question: {question}")
-    agent_executor = build_agent()
-
     try:
         result = agent_executor.invoke({"input": question})
         answer = result.get("output", "I was unable to find an answer.")

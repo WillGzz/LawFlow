@@ -1,6 +1,8 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from agent.agent import run
@@ -33,6 +35,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =============================================================================
+# STATIC FILES
+# =============================================================================
+# Mounts the frontend/ directory so FastAPI serves index.html, style.css,
+# and app.js directly. No separate web server needed.
+# GET /         → returns frontend/index.html
+# GET /static/* → serves frontend/style.css, frontend/app.js
+
+app.mount("/static", StaticFiles(directory="ChatUI"), name="static")
+
 
 # =============================================================================
 # REQUEST / RESPONSE MODELS
@@ -61,6 +73,15 @@ class AnswerResponse(BaseModel):
 # ENDPOINTS
 # =============================================================================
 
+@app.get("/")
+async def serve_frontend():
+    """
+    Serve the chat UI.
+    Returns index.html when the user opens localhost:8000 in their browser.
+    """
+    return FileResponse("ChatUI/index.html")
+
+
 @app.get("/health")
 async def health():
     """
@@ -77,7 +98,7 @@ async def query(body: QuestionRequest):
     Main query endpoint.
     Receives a plain English question about US federal regulations.
     Passes it to the LangChain agent which searches Qdrant and ArcadeDB
-    then synthesizes an answer using Claude.
+    then synthesizes an answer using the configured LLM.
     Returns the answer with the original question for context.
 
     Example request:

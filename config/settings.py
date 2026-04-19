@@ -38,8 +38,13 @@ ARCADEDB_DATABASE = "lawflow"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
+# Groq
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+LLM_PROVIDER="groq"
+GROQ_MODEL="llama-3.3-70b-versatile"
+
 
 # Processing
-CHUNK_SIZE = 512
-CHUNK_OVERLAP = 50
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+CHUNK_SIZE = 1500    # ~375 tokens, within 512 limit, ~1-2 regulatory paragraphs
+CHUNK_OVERLAP = 150  # 10% overlap, preserves sentence context at boundaries
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"

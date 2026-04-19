@@ -36,6 +36,50 @@ def execute(sql: str, auth: tuple, base_url: str) -> dict:
     return response.json()
 
 
+def setup_schema(auth: tuple, base_url: str) -> None:
+    """
+    Create vertex and edge types on first run.
+    ArcadeDB requires types to be defined before inserting records.
+    Safe to run on every batch — IF NOT EXISTS prevents errors on re-runs.
+    Must be called before any upsert or edge creation operations.
+    """
+    import requests
+
+    # create database if it doesn't exist
+    # database creation uses a different endpoint
+    try:
+        response = requests.post(
+            f"{base_url.replace('/api/v1', '')}/api/v1/create/{ARCADEDB_DATABASE}",
+            auth=auth,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+        # 200 = created, 500 with "already exists" = fine, anything else = problem
+        if response.status_code not in (200, 500):
+            response.raise_for_status()
+    except Exception as e:
+        # database may already exist — continue
+        logger.debug(f"Database creation: {e}")
+
+    # create vertex types
+    vertex_types = ["Agency", "Document", "Docket"]
+    for vtype in vertex_types:
+        try:
+            execute(f"CREATE VERTEX TYPE {vtype} IF NOT EXISTS", auth, base_url)
+        except Exception as e:
+            logger.debug(f"Vertex type {vtype}: {e}")
+
+    # create edge types
+    edge_types = ["PUBLISHED", "PARENT_OF", "PART_OF", "SUPERSEDES"]
+    for etype in edge_types:
+        try:
+            execute(f"CREATE EDGE TYPE {etype} IF NOT EXISTS", auth, base_url)
+        except Exception as e:
+            logger.debug(f"Edge type {etype}: {e}")
+
+    logger.info("ArcadeDB schema setup complete")
+
+
 def upsert_vertex(vertex_type: str, key_field: str, key_value: str,
                   fields: dict, auth: tuple, base_url: str) -> None:
     """
@@ -65,20 +109,39 @@ def upsert_vertex(vertex_type: str, key_field: str, key_value: str,
     execute(sql, auth, base_url)
 
 
+def edge_exists(edge_type: str, from_type: str, from_key: str, from_val: str,
+                to_type: str, to_key: str, to_val: str,
+                auth: tuple, base_url: str) -> bool:
+    """
+    Check if an edge already exists between two vertices.
+    ArcadeDB does not support IF NOT EXISTS on CREATE EDGE.
+    We check manually before creating to prevent duplicates on re-runs.
+    """
+    sql = (
+        f"SELECT FROM {edge_type} "
+        f"WHERE out.{from_key} = '{from_val}' "
+        f"AND in.{to_key} = '{to_val}'"
+    )
+    result = execute(sql, auth, base_url)
+    return len(result.get("result", [])) > 0
+
+
 def upsert_edge(edge_type: str, from_type: str, from_key: str, from_val: str,
                 to_type: str, to_key: str, to_val: str,
                 auth: tuple, base_url: str) -> None:
     """
     Create an edge between two vertices if it does not already exist.
-    IF NOT EXISTS prevents duplicate edges on re-runs.
-    Edge represents a relationship in the regulatory graph —
-    PUBLISHED, PARENT_OF, PART_OF, or SUPERSEDES.
+    Checks for existence first then creates — ArcadeDB does not support
+    IF NOT EXISTS on CREATE EDGE unlike vertex types.
     """
+    if edge_exists(edge_type, from_type, from_key, from_val,
+                   to_type, to_key, to_val, auth, base_url):
+        return
+
     sql = f"""
         CREATE EDGE {edge_type}
         FROM (SELECT FROM {from_type} WHERE {from_key} = '{from_val}')
         TO   (SELECT FROM {to_type}   WHERE {to_key}   = '{to_val}')
-        IF NOT EXISTS
     """.strip()
     execute(sql, auth, base_url)
 
@@ -93,10 +156,10 @@ def load_document(row, auth: tuple, base_url: str) -> None:
     3. Create PARENT_OF edge from parent to sub-agency
     4. Upsert Document vertex
     5. Create PUBLISHED edge from Agency to Document
-    6. Upsert Docket vertex if docket_id exists
+    6. Upsert Docket vertex if primary docket id exists
     7. Create PART_OF edge from Document to Docket
-    8. Create SUPERSEDES edge if this is a Final Rule
-       and a Proposed Rule already exists in the same docket
+    8. Create SUPERSEDES edge if Final Rule and Proposed Rule
+       exists in the same docket
     """
     doc_num = row["document_number"]
 
@@ -177,7 +240,6 @@ def load_document(row, auth: tuple, base_url: str) -> None:
         )
 
         # 8. create SUPERSEDES edge if this is a final rule
-        # check if a proposed rule already exists in the same docket
         if row["type"] in ("Rule", "RULE"):
             result = execute(
                 f"SELECT document_number FROM Document "
@@ -215,6 +277,10 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
 
     base_url = f"http://{ARCADEDB_HOST}:{ARCADEDB_PORT}/api/v1"
     auth = (ARCADEDB_USER, ARCADEDB_PASSWORD)
+
+    # ensure schema exists before writing
+    # safe to call on every batch — IF NOT EXISTS on all operations
+    setup_schema(auth, base_url)
 
     rows = batch_df.collect()
     success_count = 0

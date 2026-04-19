@@ -66,9 +66,9 @@ with DAG(
     # =========================================================================
     # TASK 2 — RUN PRODUCER
     # =========================================================================
-    # Runs producer.py inside the lawflow container using DockerOperator
-    # would be ideal but requires Docker socket access.
-    # BashOperator with docker exec is simpler for local dev.
+    # Runs producer.py inside the lawflow container via docker exec.
+    # Airflow has access to the Docker socket so it can exec into
+    # any running container on the host.
     # producer.py hits Federal Register API and produces documents to Kafka.
     # execution_timeout=10 minutes — if producer takes longer than
     # 10 minutes something is wrong, fail the task.

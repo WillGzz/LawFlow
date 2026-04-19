@@ -25,7 +25,7 @@ header {
 .logo {
     width: 32px;
     height: 32px;
-    background: #1D9E75;
+    background: #14435b;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -238,7 +238,7 @@ textarea::placeholder {
 #send-btn {
     width: 42px;
     height: 42px;
-    background: #1D9E75;
+    background: #14435b;
     border: none;
     border-radius: 10px;
     cursor: pointer;
@@ -250,7 +250,7 @@ textarea::placeholder {
 }
 
 #send-btn:hover {
-    background: #0F6E56;
+    background: #05131a;
 }
 
 #send-btn:disabled {

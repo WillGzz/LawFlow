@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def create_collection_if_not_exists(client) -> None:
     """
     Create the Qdrant regulations collection if it does not already exist.
-    vector_size=384 matches all-MiniLM-L6-v2 output dimensions.
+    vector_size=768 matches BAAI/bge-base-en-v1.5 output dimensions.
     Distance.COSINE measures similarity between embeddings —
     vectors pointing in the same direction = semantically similar text.
     Safe to call on every run — skips creation if collection exists.
@@ -27,7 +27,7 @@ def create_collection_if_not_exists(client) -> None:
     if QDRANT_COLLECTION not in existing:
         client.create_collection(
             collection_name=QDRANT_COLLECTION,
-            vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=768, distance=Distance.COSINE),
         )
         logger.info(f"Created Qdrant collection: {QDRANT_COLLECTION}")
     else:
