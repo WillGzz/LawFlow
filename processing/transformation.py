@@ -165,7 +165,7 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     Tries to split on paragraph breaks first (\n\n), then sentences (\n),
     then periods, then spaces — preserving natural document structure.
  
-    chunk_size in characters not words — 2000 chars ~ 300-400 words ~ 2-3 paragraphs.
+    chunk_size in characters  — 2000 chars ~ 300-400 words ~ 2-3 paragraphs.
     overlap preserves context at chunk boundaries — last N characters of one
     chunk repeat at the start of the next so meaning is not lost at splits.
     """
@@ -232,19 +232,14 @@ chunk_text_udf = udf(
 )
  
  
-# =============================================================================
-# PANDAS UDF — EMBEDDING GENERATION
-# =============================================================================
- 
 @pandas_udf(ArrayType(FloatType()))
 def generate_embeddings(texts: pd.Series) -> pd.Series:
     """
-    Generate sentence embeddings using all-MiniLM-L6-v2.
+ 
     Pandas UDF processes rows in batches not one at a time —
     significantly faster for CPU intensive embedding generation.
     Model loads once per batch not once per row.
-    384-dimensional vectors stored in Qdrant for semantic search.
-    Model downloads automatically from HuggingFace on first run (~80MB).
+
     """
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer(cfg.EMBEDDING_MODEL)
@@ -271,8 +266,8 @@ def validate(df):
     Drop rows missing required fields.
     document_number, title, and agencies are required.
     agencies must be non-empty — every Federal Register document
-    has an agency by definition. A document without agency data
-    would create an orphaned Document vertex in ArcadeDB.
+    has an agency by definition.
+
     Resolves text — use full_text if available, fall back to abstract.
     Drops rows where both are null — no text means no embeddings.
     """
@@ -293,9 +288,8 @@ def validate(df):
  
 def transform(df):
     """
-    Apply all transformations to produce a chunk-level DataFrame.
- 
-    Steps in order:
+    
+    Steps
     1. Extract agency fields via UDFs — name, id, url, parent
     2. Extract primary docket ID filtering out FRL numbers
     3. Clean processed_text — remove HTML, page markers, footnotes, separators
@@ -303,11 +297,11 @@ def transform(df):
     5. Drop raw text columns no longer needed
     6. Explode chunks — one row per chunk
     7. Add chunk_index and chunk_id
-    8. Generate embeddings — 768-dim vector per chunk
+    8. Generate embeddings — 1024-dim vector per chunk
     9. Deduplicate on chunk_id — prevent duplicate chunks
     """
  
-    # step 1 — extract agency fields
+    
     updated_df = (
         df
         .withColumn("agency_name",        agency_name_udf(col("agencies")))
@@ -317,34 +311,33 @@ def transform(df):
         .withColumn("parent_agency_id",   parent_agency_id_udf(col("agencies")))
     )
  
-    # step 2 — extract primary docket id
     with_docket = updated_df.withColumn(
         "primary_docket_id",
         primary_docket_udf(col("docket_ids"))
     )
  
-    # step 3 — clean processed_text (already resolved from full_text or abstract)
+
     with_clean = with_docket.withColumn(
         "processed_text",
         clean_text_udf(col("processed_text"))
     )
  
-    # step 4 + 5 — chunk text and drop unneeded columns
+    
     chunked = (
         with_clean
         .withColumn("chunks", chunk_text_udf(col("processed_text")))
         .drop("processed_text", "full_text", "raw_text_url", "agencies")
     )
  
-    # step 6 — explode chunks — one row per chunk
+    
     exploded = (
         chunked
         .select("*", explode(col("chunks")).alias("chunk_text"))
         .drop("chunks")
     )
  
-    # step 7 — add chunk_index and chunk_id
     window = Window.partitionBy("document_number").orderBy(lit(1))
+
     with_index = (
         exploded
         .withColumn("chunk_index", (row_number().over(window) - 1))
@@ -358,22 +351,18 @@ def transform(df):
         )
     )
  
-    # step 8 — generate embeddings
+    
     with_embeddings = with_index.withColumn(
         "embedding",
         generate_embeddings(col("chunk_text"))
     )
  
 
-    deduped = with_embeddings.dropDuplicates(["chunk_id"])
+    deduped_df = with_embeddings.dropDuplicates(["chunk_id"])
  
-    return deduped
+    return deduped_df
  
- 
-# =============================================================================
-# MAIN PIPELINE
-# =============================================================================
- 
+
 def run() -> None:
     spark = build_spark()
     spark.sparkContext.setLogLevel("WARN")

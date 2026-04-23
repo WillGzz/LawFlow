@@ -34,19 +34,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# CLIENTS
-# =============================================================================
-# Initialized once at module level — shared across all agent requests.
-# SentenceTransformer downloads model on first run (~80MB).
-
 qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 embedding_model = SentenceTransformer(EMBEDDING_MODEL)
 
 
-# =============================================================================
-# TOOLS
-# =============================================================================
+
 # Tools are functions the agent can call to retrieve information.
 # The docstring is critical — the LLM reads it to decide WHEN to use each tool.
 # Clear descriptions = better tool selection = better answers.
@@ -71,7 +63,7 @@ def search_regulations(query: str) -> str:
         results = qdrant_client.search(
             collection_name=QDRANT_COLLECTION,
             query_vector=query_vector,
-            limit=5,
+            limit=3,
             with_payload=True,
         )
 
@@ -264,11 +256,9 @@ def search_by_agency(agency_name: str) -> str:
         return f"Agency search failed: {str(e)}"
 
 
-# =============================================================================
+
 # AGENT PROMPT
-# =============================================================================
-# The system prompt tells the LLM its role, what tools it has,
-# and how to format responses.
+# The system prompt tells the LLM its role, what tools it has, and how to format responses.
 # The ReAct format requires specific placeholders:
 # {tools} — list of available tools
 # {tool_names} — tool names only
@@ -308,24 +298,15 @@ Question: {input}
 """)
 
 
-# =============================================================================
-# AGENT
-# =============================================================================
-# LLM provider is controlled by LLM_PROVIDER env var.
-# Set LLM_PROVIDER=groq for testing (free, no credits burned).
-# Set LLM_PROVIDER=anthropic for the interview demo (better reasoning).
-
 def build_agent() -> AgentExecutor:
     """
-    Build and return the LangChain ReAct agent.
-    LLM is selected based on LLM_PROVIDER env var:
-    - groq: uses Llama 3.3 70B via Groq (free tier, for testing)
-    - anthropic: uses Claude Sonnet (for demo)
+  
     ReAct = Reason + Act — the agent reasons about which tool to use,
     calls it, observes the result, reasons again, repeats until
     it has enough information to give a final answer.
+
     verbose=True logs each reasoning step — useful for debugging.
-    max_iterations=5 prevents infinite loops if the agent gets stuck.
+    max_iterations=3 prevents infinite loops if the agent gets stuck.
     """
     if LLM_PROVIDER == "groq":
         from langchain_groq import ChatGroq
@@ -360,7 +341,7 @@ def build_agent() -> AgentExecutor:
     )
 
 
-# initialized once at module level — reused across all requests
+# Build the agent once at module level — avoids re-initialization overhead on every question.
 agent_executor = build_agent()
 
 
@@ -379,10 +360,3 @@ def run(question: str) -> str:
         logger.error(f"Agent failed: {e}")
         return f"I encountered an error processing your question: {str(e)}"
 
-
-if __name__ == "__main__":
-    # test the agent from command line
-    # docker exec -it lawflow python agent/agent.py
-    question = "What EPA regulations changed recently about air quality?"
-    print(f"Question: {question}\n")
-    print(f"Answer: {run(question)}")

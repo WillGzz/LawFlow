@@ -1,6 +1,6 @@
-kafka-python==2.0.2
+# API / Agent dependencies
+# Used by: fastapi container (api/main.py, agent/agent.py)
 requests==2.31.0
-pyspark==3.5.0
 sentence-transformers==3.0.0
 qdrant-client==1.9.0
 langchain==0.2.16
@@ -8,8 +8,8 @@ langchain-anthropic==0.1.23
 langchain-community==0.2.16
 langchain-text-splitters==0.2.4
 anthropic==0.34.0
+langchain-groq==0.1.9
 fastapi==0.111.0
 uvicorn==0.30.0
 python-dotenv==1.0.0
-langchain-groq==0.1.9
 aiofiles==23.2.1

@@ -19,13 +19,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# =============================================================================
-# CORS MIDDLEWARE
-# =============================================================================
 # Allows the frontend HTML file to call this API from a different port
-# without being blocked by the browser's same-origin policy.
-# allow_origins=["*"] permits any origin — fine for local development.
-# In production restrict to your actual frontend domain.
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,12 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =============================================================================
-# STATIC FILES
-# =============================================================================
-# Mounts the frontend/ directory so FastAPI serves index.html, style.css,
-# and app.js directly. No separate web server needed.
-# GET /         → returns frontend/index.html
 # GET /static/* → serves frontend/style.css, frontend/app.js
 
 app.mount("/static", StaticFiles(directory="ChatUI"), name="static")

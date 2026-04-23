@@ -17,11 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def execute(sql: str, auth: tuple, base_url: str) -> dict:
-    """
-    Execute a single SQL command against ArcadeDB via HTTP API.
-    ArcadeDB exposes a REST API that accepts SQL commands as JSON.
-    Raises on non-200 responses so errors surface immediately.
-    """
+  
     import requests
 
     payload = {"language": "sql", "command": sql}
@@ -61,7 +57,6 @@ def setup_schema(auth: tuple, base_url: str) -> None:
         # database may already exist — continue
         logger.debug(f"Database creation: {e}")
 
-    # create vertex types
     vertex_types = ["Agency", "Document", "Docket"]
     for vtype in vertex_types:
         try:
@@ -262,10 +257,7 @@ def load_document(row, auth: tuple, base_url: str) -> None:
 
 def load_arcadedb_batch(batch_df, batch_id: int) -> None:
     """
-    Spark foreachBatch sink — writes one micro-batch to ArcadeDB.
-    Called automatically by Spark Structured Streaming every 30 seconds.
-    Receives document-level data — one row per document, not per chunk.
-    Deduplication happens in transformation.py before this is called.
+
     Imports inside function because foreachBatch runs on Spark workers
     which do not have access to driver-level imports.
     Continues on individual document failures — one bad document
