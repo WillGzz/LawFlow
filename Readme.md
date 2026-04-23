@@ -175,4 +175,3 @@ The `lawflow_pipeline` DAG runs automatically at 9am Monday through Friday.
 
 ---
 
-*Built for ESG compliance teams and legal professionals navigating US federal regulatory changes.*
