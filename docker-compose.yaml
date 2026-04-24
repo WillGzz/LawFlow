@@ -61,6 +61,8 @@ services:
         condition: service_started
       arcadedb:
         condition: service_started
+      lawflow:
+        condition: service_started
     ports:
       - "8081:8080"
     environment:
@@ -68,6 +70,8 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
       PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/orchestration/dags
+      DOCKER_API_VERSION: "1.52"
     volumes:
       - .:/opt/airflow
       - /var/run/docker.sock:/var/run/docker.sock
@@ -79,23 +83,29 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   # lawflow container — runs producer.py and transformation.py
   # triggered by Airflow via docker exec lawflow python <script>
   lawflow:
-    build:
-      context: .
-      dockerfile: Dockerfile.etl
-    container_name: lawflow
-    depends_on:
-      airflow:
-        condition: service_healthy
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    command: tail -f /dev/null
+      build:
+        context: .
+        dockerfile: Dockerfile.etl
+      container_name: lawflow
+      depends_on:
+        kafka:
+          condition: service_healthy
+        qdrant:
+          condition: service_started
+        arcadedb:
+          condition: service_started
+      environment:
+        PYTHONPATH: /app
+      volumes:
+        - .:/app
+      env_file:
+        - .env
+      command: tail -f /dev/null # keep container running to allow Airflow to exec into it and run ETL scripts
 
   # ----------------------------------------------------------------------------
   # FLOW 2 — QUERY / RETRIEVAL PIPELINE

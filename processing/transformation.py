@@ -2,7 +2,7 @@
 import logging
 import re
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf, pandas_udf, row_number, size)
+from pyspark.sql.functions import (col, from_json, when, explode, concat, lit, udf, pandas_udf, size)
 from pyspark.sql.window import Window
 from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, ArrayType, FloatType )
@@ -227,10 +227,15 @@ primary_docket_udf = udf(_extract_primary_docket, StringType())
 clean_text_udf = udf(_clean_text, StringType())
  
 chunk_text_udf = udf(
-    lambda text: _chunk_text(text, cfg.CHUNK_SIZE, cfg.CHUNK_OVERLAP),
-    ArrayType(StringType()),
+    lambda text: [
+        (i, chunk)
+        for i, chunk in enumerate(_chunk_text(text, cfg.CHUNK_SIZE, cfg.CHUNK_OVERLAP))
+    ],
+    ArrayType(StructType([
+        StructField("chunk_index", IntegerType(), False),
+        StructField("chunk_text", StringType(), False),
+    ]))
 )
- 
  
 @pandas_udf(ArrayType(FloatType()))
 def generate_embeddings(texts: pd.Series) -> pd.Series:
@@ -254,7 +259,7 @@ def read_from_kafka(spark: SparkSession, schema: StructType):
         .option("kafka.bootstrap.servers", cfg.KAFKA_BROKER)
         .option("subscribe", cfg.KAFKA_TOPIC)
         .option("kafka.group.id", cfg.KAFKA_CONSUMER_GROUP)
-        .option("startingOffsets", "latest")
+        .option("startingOffsets", "earliest")
         .load()
         .select(from_json(col("value").cast("string"), schema).alias("doc"))
         .select("doc.*")
@@ -329,25 +334,21 @@ def transform(df):
         .drop("processed_text", "full_text", "raw_text_url", "agencies")
     )
  
-    
     exploded = (
-        chunked
-        .select("*", explode(col("chunks")).alias("chunk_text"))
+    chunked
+        .select("*", explode(col("chunks")).alias("chunk"))
         .drop("chunks")
+        .withColumn("chunk_index", col("chunk.chunk_index"))
+        .withColumn("chunk_text", col("chunk.chunk_text"))
+        .drop("chunk")
     )
- 
-    window = Window.partitionBy("document_number").orderBy(lit(1))
 
-    with_index = (
-        exploded
-        .withColumn("chunk_index", (row_number().over(window) - 1))
-        .withColumn(
-            "chunk_id",
-            concat(
-                col("document_number"),
-                lit("_"),
-                col("chunk_index").cast(StringType()),
-            )
+    with_index = exploded.withColumn(
+    "chunk_id",
+        concat(
+            col("document_number"),
+            lit("_"),
+            col("chunk_index").cast(StringType()),
         )
     )
  

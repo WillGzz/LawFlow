@@ -15,7 +15,7 @@ default_args = {
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 2,
-    "retry_delay": timedelta(minutes=5),
+    "retry_delay": timedelta(minutes=5)
 }
 
 
@@ -31,7 +31,7 @@ with DAG(
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
-    tags=["lawflow", "regulatory", "ingestion"],
+    tags=["lawflow", "regulatory", "ingestion"]
 ) as dag:
 
    
@@ -42,14 +42,14 @@ with DAG(
         task_id="check_kafka_health",
         bash_command="nc -z kafka 9092 && echo 'Kafka is reachable' || exit 1",
         retries=3,
-        retry_delay=timedelta(minutes=2),
+        retry_delay=timedelta(minutes=2)
     )
 
 
     run_producer = BashOperator(
         task_id="run_producer",
-        bash_command="docker exec lawflow python ingestion/producer.py",
-        execution_timeout=timedelta(minutes=5),    #if producer takes longer than 5 minutes s fail the task.
+        bash_command="docker exec -w /app lawflow python ingestion/producer.py",
+        execution_timeout=timedelta(minutes=3)  #if producer takes longer than 3 minutes it will fail the task.
     )
 
 
@@ -57,23 +57,23 @@ with DAG(
     # Uses kafka-topics.sh to describe the topic and verify it exists and has messages.
   
     verify_kafka_messages = BashOperator(
-    task_id="check_kafka_messages",
-    bash_command="""
-        echo "Reading message from regulations topic..."
-        docker exec kafka kafka-console-consumer.sh \
-            --bootstrap-server localhost:9092 \
-            --topic regulations \
-            --from-beginning \
-            --max-messages 2 \
-            --timeout-ms 10000
-        echo "Kafka verification passed — message confirmed in topic"
-    """,
-)
-  
+        task_id="check_kafka_messages",
+        bash_command="""
+            echo "Reading message from regulations topic..."
+            docker exec kafka /usr/bin/kafka-console-consumer \
+                --bootstrap-server kafka:9092 \
+                --topic regulations \
+                --from-beginning \
+                --max-messages 2 \
+                --timeout-ms 10000 || exit 1
+            echo "Kafka verification passed — message confirmed in topic"
+        """,
+    )
+    
     run_transformation = BashOperator(
         task_id="run_transformation",
-        bash_command="docker exec lawflow python processing/transformation.py",
-        execution_timeout=timedelta(minutes=30),
+        bash_command="docker exec -w /app lawflow python processing/transformation.py",
+        execution_timeout=timedelta(minutes=30)
     )
 
     # Confirm Qdrant collection exists and has points after transformation.
@@ -83,7 +83,7 @@ with DAG(
         bash_command="""
             curl -f http://qdrant:6333/collections/regulations \
             && echo 'Qdrant collection regulations is accessible'
-        """,
+        """
     )
 
     # Confirm ArcadeDB is accessible after transformation.
@@ -94,7 +94,7 @@ with DAG(
         bash_command="""
             curl -f http://arcadedb:2480/api/v1/ready \
             && echo 'ArcadeDB is accessible'
-        """,
+        """
     )
 
     check_kafka_broker >> run_producer >> verify_kafka_messages >> run_transformation >> [verify_qdrant, verify_arcadedb]

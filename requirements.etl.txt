@@ -1,8 +1,12 @@
 # ETL Pipeline dependencies
 # Used by: lawflow container (producer.py, transformation.py)
-kafka-python==2.0.2
+kafka-python==2.3.0
 requests==2.31.0
 pyspark==3.5.0
+pandas==2.2.2
+pyarrow==16.1.0
+numpy==1.26.4
 sentence-transformers==3.0.0
+langchain-text-splitters==0.2.4
 qdrant-client==1.9.0
 python-dotenv==1.0.0
