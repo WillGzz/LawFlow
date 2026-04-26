@@ -8,3 +8,4 @@ standalone_admin_password.txt
 __pycache__/
 *.pyc
 .git/
+checkpoints/
