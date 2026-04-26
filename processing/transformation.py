@@ -23,16 +23,13 @@ logger = logging.getLogger(__name__)
 
  
 def build_spark() -> SparkSession:
-    
     return (
         SparkSession.builder
         .appName("LawFlow")
         .master("local[*]")
-        .config("spark.sql.shuffle.partitions", "8") # 8 partitions for shuffling data in local mode (low data volume)
-        .config(
-            "spark.jars.packages", #download the Kafka connector library.
-            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0", #
-        )
+        .config("spark.sql.shuffle.partitions", "8")   # 8 partitions for shuffling data in local mode (low data volume)
+        .config("spark.jars.packages",    #download the Kafka connector library.
+                "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0")
         .getOrCreate()
     )
  
@@ -79,7 +76,7 @@ def _extract_primary_agency(agencies: list) -> dict | None:
     """
     if not agencies:
         return None
-    sub = [a for a in agencies if a.get("parent_id") is not None]
+    sub = [a for a in agencies if a["parent_id"] is not None]
     return sub[0] if sub else agencies[0]
  
  
@@ -91,7 +88,7 @@ def _extract_parent_agency(agencies: list) -> dict | None:
     """
     if not agencies or len(agencies) == 1:
         return None
-    parents = [a for a in agencies if a.get("parent_id") is None]
+    parents = [a for a in agencies if a["parent_id"] is None]
     return parents[0] if parents else None
  
  
@@ -171,7 +168,7 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     """
     if not text:
         return []
-    from langchain_text_splitter import RecursiveCharacterTextSplitter
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=overlap,
@@ -184,7 +181,7 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
 # register UDFs with Spark
 agency_name_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies).get("raw_name", "").title()
+        _extract_primary_agency(agencies)["raw_name"]  #get raw name from primary agency if we have one 
         if _extract_primary_agency(agencies) else None
     ),
     StringType(),
@@ -192,7 +189,7 @@ agency_name_udf = udf(
  
 agency_id_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies).get("id")
+        _extract_primary_agency(agencies)["id"]
         if _extract_primary_agency(agencies) else None
     ),
     IntegerType(),
@@ -200,7 +197,7 @@ agency_id_udf = udf(
  
 agency_url_udf = udf(
     lambda agencies: (
-        _extract_primary_agency(agencies).get("url", "")
+        _extract_primary_agency(agencies)["url"]
         if _extract_primary_agency(agencies) else None
     ),
     StringType(),
@@ -208,7 +205,7 @@ agency_url_udf = udf(
  
 parent_agency_name_udf = udf(
     lambda agencies: (
-        _extract_parent_agency(agencies).get("raw_name", "").title()
+        _extract_parent_agency(agencies)["raw_name"].title()
         if _extract_parent_agency(agencies) else None
     ),
     StringType(),
@@ -216,7 +213,7 @@ parent_agency_name_udf = udf(
  
 parent_agency_id_udf = udf(
     lambda agencies: (
-        _extract_parent_agency(agencies).get("id")
+        _extract_parent_agency(agencies)["id"]
         if _extract_parent_agency(agencies) else None
     ),
     IntegerType(),
@@ -237,20 +234,18 @@ chunk_text_udf = udf(
     ]))
 )
  
-@pandas_udf(ArrayType(FloatType()))
-def generate_embeddings(texts: pd.Series) -> pd.Series:
-    """
- 
-    Pandas UDF processes rows in batches not one at a time —
-    significantly faster for CPU intensive embedding generation.
-    Model loads once per batch not once per row.
+_model = None
 
-    """
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(cfg.EMBEDDING_MODEL)
-    embeddings = model.encode(texts.tolist(), show_progress_bar=False)
-    return pd.Series(embeddings.tolist())
- 
+@udf(ArrayType(FloatType()))
+def generate_embeddings(text: str) -> list:
+    if not text:
+        return []
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer(cfg.EMBEDDING_MODEL)
+    embedding = _model.encode([text], show_progress_bar=False)
+    return [float(x) for x in embedding[0]]
  
 def read_from_kafka(spark: SparkSession, schema: StructType):
     return (
@@ -380,7 +375,7 @@ def run() -> None:
         transformed
         .writeStream
         .foreachBatch(load_qdrant_batch)
-        .option("checkpointLocation", "/tmp/checkpoints/qdrant")
+        .option("checkpointLocation", "/app/checkpoints/qdrant")
         .trigger(processingTime="30 seconds")
         .start()
     )
@@ -392,7 +387,7 @@ def run() -> None:
         doc_level
         .writeStream
         .foreachBatch(load_arcadedb_batch)
-        .option("checkpointLocation", "/tmp/checkpoints/arcadedb")
+        .option("checkpointLocation", "/app/checkpoints/arcadedb")
         .trigger(processingTime="30 seconds")
         .start()
     )

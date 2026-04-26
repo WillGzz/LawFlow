@@ -28,6 +28,8 @@ def execute(sql: str, auth: tuple, base_url: str) -> dict:
         headers={"Content-Type": "application/json"},
         timeout=30,
     )
+    if not response.ok:
+        logger.error(f"ArcadeDB error: {response.text} | SQL: {sql[:200]}")
     response.raise_for_status()
     return response.json()
 
@@ -41,8 +43,6 @@ def setup_schema(auth: tuple, base_url: str) -> None:
     """
     import requests
 
-    # create database if it doesn't exist
-    # database creation uses a different endpoint
     try:
         response = requests.post(
             f"{base_url.replace('/api/v1', '')}/api/v1/create/{ARCADEDB_DATABASE}",
@@ -50,12 +50,12 @@ def setup_schema(auth: tuple, base_url: str) -> None:
             headers={"Content-Type": "application/json"},
             timeout=30,
         )
-        # 200 = created, 500 with "already exists" = fine, anything else = problem
+
         if response.status_code not in (200, 500):
             response.raise_for_status()
     except Exception as e:
-        # database may already exist — continue
-        logger.debug(f"Database creation: {e}")
+
+        logger.error(f"Database creation: {e}")
 
     vertex_types = ["Agency", "Document", "Docket"]
     for vtype in vertex_types:
@@ -263,7 +263,9 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
     Continues on individual document failures — one bad document
     does not stop the entire batch.
     """
-    if batch_df.rdd.isEmpty():
+    rows = batch_df.collect()
+
+    if not rows:
         logger.info(f"Batch {batch_id} — empty, skipping ArcadeDB write")
         return
 
@@ -274,7 +276,6 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
     # safe to call on every batch — IF NOT EXISTS on all operations
     setup_schema(auth, base_url)
 
-    rows = batch_df.collect()
     success_count = 0
     fail_count = 0
 
@@ -285,7 +286,7 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
             logger.info(f"Batch {batch_id} — loaded {row['document_number']} to ArcadeDB")
         except Exception as e:
             fail_count += 1
-            logger.error(f"Batch {batch_id} — failed to load {row.get('document_number', 'unknown')}: {e}")
+            logger.error(f"Batch {batch_id} — failed to load {row['document_number']}: {e}")
             continue
 
     logger.info(f"Batch {batch_id} — ArcadeDB complete: success={success_count}, failed={fail_count}")

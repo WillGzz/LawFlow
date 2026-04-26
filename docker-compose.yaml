@@ -105,6 +105,8 @@ services:
         - .:/app
       env_file:
         - .env
+      ports:
+        - "4040:4040"  #spark UI 
       command: tail -f /dev/null # keep container running to allow Airflow to exec into it and run ETL scripts
 
   # ----------------------------------------------------------------------------

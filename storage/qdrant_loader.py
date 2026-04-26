@@ -86,14 +86,15 @@ def load_qdrant_batch(batch_df, batch_id: int) -> None:
     """
     from qdrant_client import QdrantClient
 
-    if batch_df.rdd.isEmpty():
+    rows = batch_df.collect()
+    
+    if not rows:
         logger.info(f"Batch {batch_id} — empty, skipping Qdrant write")
         return
 
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     create_collection_if_not_exists(client)
 
-    rows = batch_df.collect()
     points = build_points(rows)
 
     if not points:

@@ -73,7 +73,7 @@ with DAG(
     run_transformation = BashOperator(
         task_id="run_transformation",
         bash_command="docker exec -w /app lawflow python processing/transformation.py",
-        execution_timeout=timedelta(minutes=30)
+        execution_timeout=timedelta(hours=1)
     )
 
     # Confirm Qdrant collection exists and has points after transformation.

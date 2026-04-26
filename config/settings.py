@@ -13,7 +13,7 @@ KAFKA_REPLICATION_FACTOR = 1
 # Federal Register API
 FEDERAL_REGISTER_URL = "https://www.federalregister.gov/api/v1/documents.json"
 FEDERAL_REGISTER_PARAMS = {
-    "per_page": 20,
+    "per_page": 2,
     "order": "newest",
     "conditions[agencies][]": [
         "energy-department",
