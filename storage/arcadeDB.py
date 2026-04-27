@@ -64,7 +64,7 @@ def setup_schema(auth: tuple, base_url: str) -> None:
         except Exception as e:
             logger.debug(f"Vertex type {vtype}: {e}")
 
-    # create edge types
+
     edge_types = ["PUBLISHED", "PARENT_OF", "PART_OF", "SUPERSEDES"]
     for etype in edge_types:
         try:
@@ -272,8 +272,6 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
     base_url = f"http://{ARCADEDB_HOST}:{ARCADEDB_PORT}/api/v1"
     auth = (ARCADEDB_USER, ARCADEDB_PASSWORD)
 
-    # ensure schema exists before writing
-    # safe to call on every batch — IF NOT EXISTS on all operations
     setup_schema(auth, base_url)
 
     success_count = 0
@@ -290,3 +288,5 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
             continue
 
     logger.info(f"Batch {batch_id} — ArcadeDB complete: success={success_count}, failed={fail_count}")
+
+    

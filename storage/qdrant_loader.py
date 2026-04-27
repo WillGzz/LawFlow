@@ -21,7 +21,7 @@ def create_collection_if_not_exists(client) -> None:
     if QDRANT_COLLECTION not in existing:
         client.create_collection(
             collection_name=QDRANT_COLLECTION,
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=768, distance=Distance.COSINE),
         )
         logger.info(f"Created Qdrant collection: {QDRANT_COLLECTION}")
     else:

@@ -47,4 +47,4 @@ GROQ_MODEL="groq/compound"
 # Processing
 CHUNK_SIZE = 1500    # ~375 tokens, within 512 limit, ~1-2 regulatory paragraphs
 CHUNK_OVERLAP = 150  # 10% overlap, preserves sentence context at boundaries
-EMBEDDING_MODEL = "intfloat/multilingual-e5-large"
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
