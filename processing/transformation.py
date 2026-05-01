@@ -376,7 +376,7 @@ def run() -> None:
         .writeStream
         .foreachBatch(load_qdrant_batch)
         .option("checkpointLocation", "/app/checkpoints/qdrant")
-        .trigger(processingTime="30 seconds")
+        .trigger(once=True)  
         .start()
     )
  
@@ -388,12 +388,15 @@ def run() -> None:
         .writeStream
         .foreachBatch(load_arcadedb_batch)
         .option("checkpointLocation", "/app/checkpoints/arcadedb")
-        .trigger(processingTime="30 seconds")
+        .trigger(once=True)  
         .start()
     )
  
     logger.info("Streaming queries running — waiting for data from Kafka")
-    spark.streams.awaitAnyTermination()
+    # spark.streams.awaitAnyTermination()
+
+    qdrant_query.awaitTermination()
+    arcadedb_query.awaitTermination()
  
  
 if __name__ == "__main__":

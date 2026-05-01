@@ -45,7 +45,7 @@ def setup_schema(auth: tuple, base_url: str) -> None:
 
     try:
         response = requests.post(
-            f"{base_url.replace('/api/v1', '')}/api/v1/create/{ARCADEDB_DATABASE}",
+            f"{base_url}/create/{ARCADEDB_DATABASE}",
             auth=auth,
             headers={"Content-Type": "application/json"},
             timeout=30,
@@ -64,16 +64,37 @@ def setup_schema(auth: tuple, base_url: str) -> None:
         except Exception as e:
             logger.debug(f"Vertex type {vtype}: {e}")
 
-
     edge_types = ["PUBLISHED", "PARENT_OF", "PART_OF", "SUPERSEDES"]
     for etype in edge_types:
         try:
             execute(f"CREATE EDGE TYPE {etype} IF NOT EXISTS", auth, base_url)
         except Exception as e:
             logger.debug(f"Edge type {etype}: {e}")
+    
+
+    properties = [
+        "CREATE PROPERTY Agency.agency_id IF NOT EXISTS STRING",
+        "CREATE PROPERTY Document.document_number IF NOT EXISTS STRING",
+        "CREATE PROPERTY Docket.docket_id IF NOT EXISTS STRING",
+    ]
+    for prop in properties:
+        try:
+            execute(prop, auth, base_url)
+        except Exception as e:
+            logger.debug(f"Property: {e}")
+
+    indexes = [
+        "CREATE INDEX ON Agency (agency_id) UNIQUE",
+        "CREATE INDEX ON Document (document_number) UNIQUE",
+        "CREATE INDEX ON Docket (docket_id) UNIQUE",
+    ]
+    for idx in indexes:
+        try:
+            execute(idx, auth, base_url)
+        except Exception as e:
+            logger.debug(f"Index: {e}")
 
     logger.info("ArcadeDB schema setup complete")
-
 
 def upsert_vertex(vertex_type: str, key_field: str, key_value: str,
                   fields: dict, auth: tuple, base_url: str) -> None:
@@ -285,7 +306,7 @@ def load_arcadedb_batch(batch_df, batch_id: int) -> None:
         except Exception as e:
             fail_count += 1
             logger.error(f"Batch {batch_id} — failed to load {row['document_number']}: {e}")
-            continue
+        
 
     logger.info(f"Batch {batch_id} — ArcadeDB complete: success={success_count}, failed={fail_count}")
 

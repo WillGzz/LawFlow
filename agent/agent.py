@@ -56,16 +56,15 @@ def search_regulations(query: str) -> str:
     Returns the most relevant regulatory text chunks with metadata.
     """
     try:
-        # convert query to embedding using same model as ingestion
+        
         query_vector = embedding_model.encode(query).tolist()
-
-        # search qdrant for most similar chunks
-        results = qdrant_client.search(
+    
+        results = qdrant_client.query_points(
             collection_name=QDRANT_COLLECTION,
-            query_vector=query_vector,
+            query=query_vector,
             limit=3,
             with_payload=True,
-        )
+        ).points
 
         if not results:
             return "No relevant regulatory documents found for this query."

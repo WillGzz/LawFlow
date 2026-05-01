@@ -7,7 +7,7 @@
 /docs/internal/lawflowbackground.md
 /docs/internal/arcadeDB.txt
 /docs/internal/qdrant.txt
-
+/docs/internal/ARCHITECTURE_DECISIONS.md
 
 test.yaml
 Dockerfile.py

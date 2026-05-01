@@ -106,9 +106,9 @@ async def query(body: QuestionRequest):
     logger.info(f"Received question: {body.question}")
 
     try:
-        answer = run(body.question)
+        agent_answer = run(body.question)
         logger.info("Query completed successfully")
-        return AnswerResponse(question=body.question, answer=answer)
+        return AnswerResponse(question=body.question, answer=agent_answer)
     except Exception as e:
         logger.error(f"Query failed: {e}")
         raise HTTPException(
