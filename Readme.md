@@ -134,6 +134,9 @@ QDRANT_HOST=qdrant
 QDRANT_PORT=6333
 QDRANT_COLLECTION=regulations
 
+AIRFLOW_USER=admin
+AIRFLOW_PASSWORD=generated txt upon container build
+
 KAFKA_BROKER=kafka:9092
 KAFKA_TOPIC=regulations
 KAFKA_CONSUMER_GROUP=lawflow-spark
@@ -146,24 +149,24 @@ EMBEDDING_MODEL=intfloat/multilingual-e5-large
 docker compose up --build
 ```
 
-**4. Run the pipeline manually (first run)**
+**4. Run the pipeline manually Or through Airflow**
 ```bash
 docker exec lawflow python ingestion/producer.py
 docker exec lawflow python processing/transformation.py
 ```
 
-**5. Open the chat UI**
-```
-http://localhost:8000
-```
-
-**6. Access Airflow**
+**5. Access Airflow**
 ```
 http://localhost:8081
 ```
 The `lawflow_pipeline` DAG runs automatically at 9am Monday through Friday.
 
 ---
+
+**6. Open the chat UI**
+```
+http://localhost:8000
+```
 
 ## Example Queries
 
